@@ -1,0 +1,969 @@
+---
+title: "Conspiracy_values_trust"
+output: html_document
+date: "2023-07-08"
+---
+
+
+db: https://ess-search.nsd.no/en/study/172ac431-2a06-41df-9dab-c1fd8f3877e7
+
+
+# Work outline:
+* LIBRARIES
+* DB UPLOAD
+* DB CLEANING & EXPLORATORY ANALYSIS
+    - keep only var of interest
+    - correcting NA
+    - variables selection
+    - re-coding variables
+    - dependent var merge
+    - plot variables freq
+    - variables normalization
+    - dummy encoding
+    - correlation matrix
+* PCA
+    - PCA for human values
+    - EFA for human values
+    - PCA for trust var
+    - EFA for trust var
+    - PCA correlaion matrix
+* REGRESSION
+    - conspiracy model
+    - stepwise selection
+    - multicollinearity test
+    - secgrdec model
+    - stepwise selection
+    - multicollinearity test
+    - scidecpb model
+    - stepwise selection
+    - multicollinearity test
+[Other models]
+  
+
+
+
+
+### Libraries
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(dplyr)
+library(ggplot2)
+library(tibble)
+library(survey)
+library(ggcorrplot)
+library(psych)
+library(MASS)
+library(ltm)
+library(caret)
+library(fastDummies)
+library(glmnet)
+library(tidyr)
+library(sjPlot)
+```
+
+
+
+### DB uploads
+```{r}
+df <- read_csv("dataset/original/ESS10.csv")
+
+```
+
+# DB CLEANING
+
+Removing countries other than IT
+```{r}
+df <- df %>% 
+  filter(cntry == "IT")
+
+```
+
+```{r}
+head(df)
+```
+
+
+
+
+## Possible columns of interest
+```{r}
+cols_to_keep <- c(
+  # ID & WEIGHTS
+  "idno",       # Respondent's identification number
+  "dweight",    # Design weight
+  "pspwght",    # Post-stratification weight including design weight
+  "pweight",    # Population size weight 
+  "anweight",   # Analysis weight
+  # MEDIA & SOCIAL TRUST
+  "nwspol",     # News about politics and curren ... ading or listening, in minutes
+  "netustm",    # Internet use, how much time on typical day, in minutes
+  "ppltrst",    # Most people can be trusted or you can't be too careful
+  # POLITICS & TRUST
+  "polintr",    # How interested in politics
+  "trstlgl",    # Trust in the legal system
+  "trstplc",    # Trust in the police
+  "trstplt",    # Trust in politicians
+  "trstep",     # Trust in the European Parliament
+  "trstsci",    # Trust in scientists
+  "vote",       # Voted last national election
+  "prtvtdit",   # Party voted for in last national election, Italy
+  "pbldmna",    # Taken part in public demonstration last 12 months
+  "lrscale",    # Placement on left right scale
+  "stflife",    # How satisfied with life as a whole
+  "stfgov",     # How satisfied with the national government
+  "freehms",    # Gays and lesbians free to live life as they wish
+  "euftf",      # European Union: European unification go further or gone too far
+  "imwbcnt",    # Immigrants make country worse or better place to live
+  # WELL-BEING, RELIGION & ETNICITHY
+  "happy",      # How happy are you (check w/ satlife)
+  "sclmeet",    # How often socially meet with friends, relatives or colleagues
+  "health",     # Subjective general health
+  "rlgblg",     # Belonging to particular religion or denomination
+  "rlgdnm",     # Religion or denomination belonging to at present (which one)
+  "dscrgrp",    # Member of a group discriminated against in this country
+  "ctzcntr",    # Citizen of country
+  "brncntr",    # Born in country
+  "cntbrthd",   # Country of birth
+  "wrclmch",    # How worried about climate change
+  "vteurmmb",   # Would vote for IT to stay a  member of European Union or leave
+  # UNDERSTANDING OF DEMOCRACY
+  "viepolc",    # In IT the views of ordina ... e views of the political elite
+  "keydecc",    # In country key decisions are m ... rather than the European Union
+  "accalaw",    # Acceptable for country to have a strong leader above the law
+  # GENDER, AGE & HOUSEHOLD
+  "hhmmb",      # Number of people living regularly as member of household
+  "gndr",       # Gender
+  "agea",       # Age of respondent, calculated
+  # SOCIO-DEMOGRAPHICS
+  "marsts",     # Legal marital status
+  "chldhhe",    # Ever had children living in household
+  "domicil",    # Domicile, respondent's description
+  "edlveit",    # Highest level of education, Italy
+  "mnactic",    # Main activity last 7 days, all respondents
+  "emplrel",    # Employment relation
+  "hincfel",    # Feeling about household's income nowadays
+  "edlvpeit",   # Partner's highest level of education, Italy
+  "edlvfeit",   # Father's highest level of education, Italy
+  "edlvmeit",   # Mother's highest level of education, Italy
+  "region",     # Region
+  # DIGITAL SOCIAL CONTACTS
+  "mcmsinf",    # Online/mobile communication exposes people to misinformation
+  "stfmjob",    # How satisfied are you in your main job
+  "c19wplch",   # Work place change occurred as a result of COVID-19
+  # HUMAN VALUES
+  "ipcrtiv",    # Important to think new ideas and being creative
+  "imprich",    # Important to be rich, have money and expensive things
+  "ipeqopt",    # Important that people are trea ... y and have equal opportunities
+  "ipshabt",    # Important to show abilities and be admired
+  "impsafe",    # Important to live in secure and safe surroundings
+  "impdiff",    # Important to try new and different things in life
+  "ipfrule",    # Important to do what is told and follow rules
+  "ipudrst",    # Important to understand different people
+  "ipmodst",    # Important to be humble and modest, not draw attention
+  "ipgdtim",    # Important to have a good time
+  "impfree",    # Important to make own decisions and be free
+  "iphlppl",    # Important to help people and care for others well-being
+  "ipsuces",    # Important to be successful and that people recognize achievements
+  "ipstrgv",    # Important that government is strong and ensures safety
+  "ipadvnt",    # Important to seek adventures and have an exciting life
+  "ipbhprp",    # Important to behave properly
+  "iprspot",    # Important to get respect from others
+  "iplylfr",    # Important to be loyal to friends and devote to people close
+  "impenv",     # Important to care for nature and environment
+  "imptrad",    # Important to follow traditions and customs
+  "impfun",     # Important to seek fun and things that give pleasure
+  # COVID-19
+  "secgrdec",   # Small secret group of people r ... or decisions in world politics
+  "scidecpb",   # Groups of scientists manipulat ... in order to deceive the public
+  "panfolru",   # More important to follow gover ... sions when fighting a pandemic
+  "gvhanc19",   # How satisfied with government's handling of COVID-19 in IT
+  "gvconc19",   # COVID-19 is result of delibera ... ome government or organisation
+  "respc19",    # Respondent had COVID-19
+  "reshhc19",   # Anyone living with respondent had COVID-19
+  "getavc19"   # Whether respondent will get vax ... egulatory authority in country
+)
+
+df <- dplyr::select(df, all_of(cols_to_keep))
+
+```
+
+
+
+# SUBSTITUTING 7/8/9 VALUES WITH  NA
+
+### Populating NA for the values 7/8/9 in Human values
+```{r}
+var_hum_values <- c("ipcrtiv", "imprich", "ipeqopt", "ipshabt", "impsafe", 
+                    "impdiff", "ipfrule", "ipudrst", "ipmodst", "ipgdtim",
+                    "impfree", "iphlppl", "ipsuces", "ipstrgv", "ipadvnt", 
+                    "ipbhprp", "iprspot", "iplylfr", "impenv", "imptrad", 
+                    "impfun")
+
+
+
+df <- df %>%
+  mutate(across(all_of(var_hum_values), ~ifelse(. %in% c(7, 8, 9), NA, .)))
+```
+
+
+### Populating NA for the other values 7/8/9
+```{r}
+variable_names <- c("polintr", "vote", "pbldmna", "freehms", "health", 
+                    "rlgblg", "dscrgrp", "ctzcntr", "brncntr", "gndr", 
+                    "domicil", "hincfel", "secgrdec", "scidecpb", "gvconc19", 
+                    "respc19", "reshhc19")
+
+
+
+df <- df %>%
+  mutate(across(all_of(variable_names), ~ifelse(. %in% c(7, 8, 9), NA, .)))
+```
+
+
+### Populating NA for the values 6/7/8/9
+```{r}
+variable_names <- c("wrclmch", "chldhhe", "emplrel", "c19wplch", "getavc19")
+
+
+df <- df %>%
+  mutate(across(all_of(variable_names), ~ifelse(. %in% c(6, 7, 8, 9), NA, .)))
+```
+
+
+### Populating NA for the values 77/88/99 
+```{r}
+variable_names <- c("ppltrst", "trstlgl", "trstplc", "trstplt", "trstep", 
+                    "trstsci", "lrscale", "stflife", "stfgov", "euftf", 
+                    "imwbcnt", "happy", "sclmeet", "vteurmmb", "viepolc", 
+                    "keydecc", "accalaw", "hhmmb", "mcmsinf", "panfolru", 
+                    "gvhanc19")
+
+
+df <- df %>%
+  mutate(across(all_of(variable_names), ~ifelse(. %in% c(77, 88, 99), NA, .)))
+```
+
+
+### Populating NA for the values 66/77/88/99
+```{r}
+variable_names <- c("prtvtdit", "rlgdnm", "marsts", "mnactic", "stfmjob")
+
+
+df <- df %>%
+  mutate(across(all_of(variable_names), ~ifelse(. %in% c(66, 77, 88, 99), NA, .)))
+```
+
+
+### Populating NA for the values 777/888/999
+```{r}
+variable_names <- c("agea")
+
+
+df <- df %>%
+  mutate(across(all_of(variable_names), ~ifelse(. %in% c(777, 888, 999), NA, .)))
+```
+
+
+### Populating NA for the values 6666/7777/8888/9999
+```{r}
+variable_names <- c("nwspol", "netustm", "cntbrthd", "edlveit", "edlvpeit", 
+                    "edlvfeit", "edlvmeit")
+
+
+df <- df %>%
+  mutate(across(all_of(variable_names), ~ifelse(. %in% c(6666, 7777, 8888, 9999), NA, .)))
+```
+
+
+## FINAL VARIABLES KEPT
+```{r}
+cols_to_keep <- c(
+  # DEPENDENT VARIABLES
+  "secgrdec",   # Small secret group of people r ... or decisions in world politics
+  "scidecpb",   # Groups of scientists manipulat ... in order to deceive the public
+  
+  # CONTROL VARIABLES
+  "nwspol",     # News about politics and curren ... ading or listening, in minutes
+  "pbldmna",    # Taken part in public demonstration last 12 months
+  "stflife",    # How satisfied with life as a whole
+  "sclmeet",    # How often socially meet with friends, relatives or colleagues
+  "hhmmb",      # Number of people living regularly as member of household
+  "gndr",       # Gender
+  "agea",       # Age of respondent, calculated
+  "polintr",    # How interested in politics  
+  "domicil",    # Domicile, respondent's description
+  "edlveit",    # Highest level of education, Italy
+  "hincfel",    # Feeling about household's income nowadays
+  "mcmsinf",    # Online/mobile communication exposes people to misinformation
+  "panfolru",   # More important to follow gover ... sions when fighting a pandemic
+  "gvhanc19",   # How satisfied with government's handling of COVID-19 in IT
+  "respc19",    # Respondent had COVID-19
+  "reshhc19",   # Anyone living with respondent had COVID-19
+  "getavc19",   # Whether respondent will get vax ... egulatory authority in country
+  
+  # TRUST IN THE ESTABLISHMENT 
+  "ppltrst",    # Most people can be trusted or you can't be too careful
+  "trstlgl",    # Trust in the legal system
+  "trstplc",    # Trust in the police
+  "trstplt",    # Trust in politicians
+  "trstep",     # Trust in the European Parliament
+  "trstsci",    # Trust in scientists
+  "viepolc",    # In IT the views of ordina ... e views of the political elite
+  
+
+  # HUMAN VALUES
+  "ipcrtiv",    # Important to think new ideas and being creative
+  "imprich",    # Important to be rich, have money and expensive things
+  "ipeqopt",    # Important that people are trea ... y and have equal opportunities
+  "ipshabt",    # Important to show abilities and be admired
+  "impsafe",    # Important to live in secure and safe surroundings
+  "impdiff",    # Important to try new and different things in life
+  "ipfrule",    # Important to do what is told and follow rules
+  "ipudrst",    # Important to understand different people
+  "ipmodst",    # Important to be humble and modest, not draw attention
+  "ipgdtim",    # Important to have a good time
+  "impfree",    # Important to make own decisions and be free
+  "iphlppl",    # Important to help people and care for others well-being
+  "ipsuces",    # Important to be successful and that people recognize achievements
+  "ipstrgv",    # Important that government is strong and ensures safety
+  "ipadvnt",    # Important to seek adventures and have an exciting life
+  "ipbhprp",    # Important to behave properly
+  "iprspot",    # Important to get respect from others
+  "iplylfr",    # Important to be loyal to friends and devote to people close
+  "impenv",     # Important to care for nature and environment
+  "imptrad",    # Important to follow traditions and customs
+  "impfun"     # Important to seek fun and things that give pleasure
+)
+
+df <- df %>% 
+  dplyr::select(all_of(cols_to_keep))
+
+
+```
+
+
+# checking the 5555 in edlveit
+```{r}
+count_5555 <- sum(df$edlveit == 5555)
+count_5555
+df <- df[df$edlveit != 5555, ]
+```
+
+### na drop
+```{r}
+na_percentages <- colSums(is.na(df)) / nrow(df) * 100
+na_percentages
+```
+
+```{r}
+df <- na.omit(df)
+```
+
+
+```{r}
+summary(df)
+```
+
+
+
+# RECODING
+
+### Human Values
+```{r}
+df[var_hum_values] <- lapply(df[var_hum_values], function(x) {
+  ifelse(x %in% c(1, 2, 3, 4, 5, 6), 7 - x, x)
+})
+
+```
+
+
+### Control Variables
+```{r}
+var_contr <- c("nwspol", "stflife", "sclmeet", "hhmmb", "agea", 
+               "polintr", "domicil", "edlveit", "hincfel", "mcmsinf",
+               "panfolru", "gvhanc19")
+
+var_contr_D <- c("pbldmna", "gndr", "respc19", "reshhc19", "getavc19")
+```
+
+
+```{r}
+df[c("polintr", "hincfel")] <- lapply(df[c("polintr", "hincfel")], function(x) {
+  ifelse(x %in% c(1, 2, 3, 4), 5 - x, x)
+})
+
+```
+
+```{r}
+df$domicil <- 6 - df$domicil # how big the city you live in
+df$panfolru <- 10 - df$panfolru # would you follow government rules
+```
+
+```{r}
+# collapse then change: 0 = no, 1 = yes
+df$respc19 <- ifelse(df$respc19 < 3, 1, 0)
+df$getavc19 <- ifelse(df$getavc19 < 3, 1, 0)
+df$reshhc19 <- ifelse(df$reshhc19 < 3, 1, 0)
+
+```
+
+```{r}
+df$pbldmna <- ifelse(df$pbldmna == 2, 0, df$pbldmna)
+df$gndr <- ifelse(df$gndr == 2, 0, df$gndr) # male
+```
+
+
+### Dependent variables
+```{r}
+df[c("secgrdec", "scidecpb")] <- lapply(df[c("secgrdec", "scidecpb")], function(x) {
+  ifelse(x %in% c(1, 2, 3, 4, 5), 6 - x, x)
+})
+```
+
+
+
+
+## Merge the 2 dependent variable into one
+```{r}
+# merge the dependent variable (different approach analyzed later)
+df$consprcy <- rowMeans(df[c("secgrdec", "scidecpb")],na.rm=T); 
+
+```
+
+## Alpha cronbach consistency 
+```{r}
+cronbach.alpha(df[c("secgrdec", "scidecpb")]) # alpha acceptable since > 0.7
+```
+
+
+# Plot histograms
+
+```{r}
+plotVariableFrequencies <- function(data, variables) {
+  for (variable in variables) {
+    freq_table <- table(data[[variable]])
+    
+    barplot(freq_table, main = paste("Frequency Plot of", variable),
+            xlab = variable, ylab = "Frequency")
+    
+    file_name <- paste0("plots/", variable, ".png")
+    png(file_name)
+    barplot(freq_table, main = paste("Frequency Plot of", variable),
+            xlab = variable, ylab = "Frequency")
+    dev.off()
+  }
+}
+
+```
+
+
+
+dependent variables
+```{r}
+var_dep <- c("secgrdec", "scidecpb", "consprcy")
+```
+
+```{r}
+sumstat_dep <- summary(df[c("secgrdec", "scidecpb", "consprcy")]); sumstat_dep
+
+plotVariableFrequencies(df, c("secgrdec", "scidecpb", "consprcy"))
+
+```
+
+
+human values
+```{r}
+sumstat_val <- summary(df[var_hum_values]); sumstat_val
+
+plotVariableFrequencies(df, var_hum_values)
+```
+
+
+trust variables
+```{r}
+var_trust <-  c("ppltrst", "trstlgl", "trstplc", "trstplt", "trstep", 
+                "trstsci", "viepolc")    
+```
+
+```{r}
+sumstat_tr <- summary(df[var_trust]); sumstat_tr
+
+plotVariableFrequencies(df, var_trust)
+```
+
+control variables
+```{r}
+sumstat_cont <- summary(df[var_contr]); sumstat_cont
+
+plotVariableFrequencies(df, var_contr)
+```
+
+```{r}
+computeDummyVariableFrequencies <- function(data, dummy_variables) {
+  frequencies <- lapply(dummy_variables, function(variable) {
+    freq_table <- table(data[[variable]])
+    rel_freq_table <- prop.table(freq_table)
+    result <- data.frame(Dummy_Variable = variable, Frequency = freq_table, Relative_Frequency = rel_freq_table)
+    return(result)
+  })
+  
+  return(frequencies)
+}
+
+```
+
+```{r}
+computeDummyVariableFrequencies(df, var_contr_D)
+```
+
+
+
+
+# RESCALING (Variable normalization)
+
+### Human Values
+```{r}
+df[var_hum_values] <- df[var_hum_values] %>% 
+  scale()
+```
+
+### Trust
+```{r}
+df[var_trust] <- df[var_trust] %>% 
+  scale()
+```
+
+### Control variables 
+```{r}
+df[var_contr] <- df[var_contr] %>% 
+  scale()
+```
+
+### Dummy Encoding
+```{r}
+df_dummies <- dummyVars(~., data = df[var_contr_D])
+df_dummies <- predict(df_dummies, newdata = df[var_contr_D])
+df <- cbind(df[!names(df) %in% var_contr_D], df_dummies)
+
+df <- as_tibble(df)
+```
+
+### Dependent variables
+```{r}
+df[c("secgrdec", "scidecpb", "consprcy")] <- df[c("secgrdec", "scidecpb", "consprcy")] %>% 
+  scale()
+```
+
+
+
+
+
+# CORRELATION
+
+### Human Values
+```{r}
+cor_hum_val <- df[var_hum_values] %>% 
+  cor()
+
+round(cor_hum_val, 2)
+```
+```{r}
+col<- colorRampPalette(c("blue", "white", "red"))(20)
+heatmap(x = cor_hum_val, col = col, symm = TRUE, Colv = NA, Rowv = NA, 
+        main = "Heatmap Human values")
+```
+
+
+
+### Trust
+```{r}
+cor_trust <- df[var_trust] %>% 
+  cor()
+
+round(cor_trust, 2)
+```
+
+
+## Correlation all variables
+```{r}
+cor_matr <- df[!names(df) %in% var_contr_D] %>%
+  cor()
+
+
+round(cor_matr, 2)
+```
+
+# dependent variables
+```{r}
+cor_dep <- df[var_dep] %>% 
+  cor()
+
+round(cor_dep, 2)
+```
+
+
+
+# PCA
+
+### Human values
+
+```{r}
+subset_hum_val <- df[var_hum_values]
+```
+
+
+```{r}
+fa.parallel(subset_hum_val, fa='pc', show.legend=FALSE, main = "Parallel analysis: Human values")
+
+output_file <- "plot_pca_hum.png"
+
+png(filename = output_file)
+fa.parallel(subset_hum_val, fa='pc', show.legend=FALSE, main = "Parallel analysis: Human values")
+dev.off()
+```
+
+
+```{r}
+pc_val <- principal(subset_hum_val, nfactors=4, rotate = 'varimax', scores = T, missing = T)
+pc_val
+```
+
+```{r}
+head(pc_val$scores)
+
+round(unclass(pc_val$weights), 2)
+```
+
+### EFA Human Values
+```{r}
+# EFA
+fa.parallel(subset_hum_val, fa='both', show.legend=FALSE, main = "Scree plot with parallel analysis")
+```
+
+```{r}
+fa_val <- fa(subset_hum_val, nfactors = 4, rotate = 'varimax', scores = T, fm = "minres")
+fa_val
+```
+
+```{r}
+fa.diagram(fa_val, simple = T)
+```
+
+### Trust
+```{r}
+subset_trust <- df[var_trust]
+```
+
+```{r}
+fa.parallel(subset_trust, fa='pc', show.legend=FALSE, main = "Scree plot with parallel analysis")
+
+output_file <- "plot_pca_tr.png"
+
+png(filename = output_file)
+fa.parallel(subset_trust, fa='pc', show.legend=FALSE, main = "Scree plot: trust")
+dev.off()
+
+```
+
+```{r}
+pc_tr <- principal(subset_trust, nfactors=2, rotate = 'varimax', scores = T, missing = T)
+pc_tr
+```
+
+```{r}
+head(pc_tr$scores)
+
+round(unclass(pc_tr$weights), 2)
+```
+
+
+### EFA Trust
+```{r}
+# EFA
+fa.parallel(subset_trust, fa='both', show.legend=FALSE, main = "Scree plot with parallel analysis")
+```
+
+```{r}
+fa_tr <- fa(subset_trust, nfactors = 2, rotate = 'varimax', scores = T, fm = "minres")
+fa_tr
+```
+
+```{r}
+fa.diagram(fa_tr, simple = F)
+```
+
+Add PCs to df
+```{r}
+df$rc1_val <- pc_val$scores[, 1]
+df$rc2_val <- pc_val$scores[, 2]
+df$rc3_val <- pc_val$scores[, 3]
+df$rc4_val <- pc_val$scores[, 4]
+
+df$rc1_tr <- pc_tr$scores[, 1]
+df$rc2_tr <- pc_tr$scores[, 2]
+
+```
+
+
+# Correlations with RC
+```{r}
+df_slim_noD <- df[c(var_dep, "rc1_val", "rc2_val", "rc3_val",
+                "rc4_val", "rc1_tr", "rc2_tr", var_contr)]
+```
+
+```{r}
+cor_matr_rc <- df_slim_noD %>% 
+  cor()
+
+round(cor_matr_rc, 2)
+```
+
+```{r}
+col<- colorRampPalette(c("blue", "white", "red"))(20)
+heatmap(cor_matr_rc, col = col, symm = TRUE, Colv = NA, Rowv = NA,
+        main = "Correlation heatmap")
+
+```
+
+
+### Remove from df human values and trust variables
+
+```{r}
+df_slim = NULL
+df_slim <- df[c(var_dep, "rc1_val", "rc2_val", "rc3_val",
+                "rc4_val", "rc1_tr", "rc2_tr", var_contr, var_contr_D)]
+```
+
+
+
+
+
+# REGRESSION
+
+
+## predicting consprcy
+```{r}
+lm_m0 <- lm(consprcy ~ . - scidecpb - secgrdec  , data = df_slim)
+summary(lm_m0)
+```
+
+### VIF test 
+```{r}
+car::vif(lm_m0) 
+```
+no multicollinearity
+
+
+### Stepwise selection
+```{r}
+stepAIC(lm_m0, direction = "both")
+```
+
+```{r}
+lm_m1 <- lm(formula = consprcy ~ rc1_val + rc2_val + rc3_val + rc1_tr + 
+    rc2_tr + sclmeet + agea + polintr + domicil + hincfel + mcmsinf + 
+    panfolru + gvhanc19 + gndr + getavc19, data = df_slim)
+summary(lm_m1)
+
+tab_model(lm_m1)
+```
+
+multicollinearity test
+```{r}
+car::vif(lm_m1) # no collinearity problem detectded
+```
+
+
+
+
+
+## Predict secgrdec
+
+```{r}
+lm_g0 <- lm(secgrdec ~ . - scidecpb - consprcy, data = df_slim)
+summary(lm_g0)
+```
+
+### VIF test 
+```{r}
+car::vif(lm_g0) # no multicoll. problems
+```
+
+### Stepwise selection
+```{r}
+stepAIC(lm_g0, direction = "both")
+```
+
+```{r}
+lm_g1 <- lm(formula = secgrdec ~ rc1_val + rc2_val + rc1_tr + sclmeet + 
+    domicil + hincfel + panfolru + gvhanc19 + getavc19, data = df_slim)
+
+summary(lm_g1)
+tab_model(lm_g1)
+```
+
+
+## Predict scidecpb
+
+```{r}
+lm_s0 <- lm(scidecpb ~ . - secgrdec - consprcy, data = df_slim)
+summary(lm_s0)
+```
+
+### VIF test 
+```{r}
+car::vif(lm_s0) # no multicoll. problems
+```
+
+### Stepwise selection
+```{r}
+stepAIC(lm_s0, direction = "both")
+```
+
+```{r}
+lm_s1 <- lm(formula = scidecpb ~ rc2_val + rc3_val + rc1_tr + rc2_tr + 
+    sclmeet + agea + polintr + edlveit + hincfel + mcmsinf + 
+    panfolru + gvhanc19 + gndr + respc19 + getavc19, data = df_slim)
+summary(lm_s1)
+tab_model(lm_s1)
+```
+This one has the highest R-squared so far
+
+
+
+# OTHER MODELS
+
+## Lasso regression for consprcy
+```{r}
+y <- df_slim$consprcy
+x <- data.matrix(df_slim[, c("rc1_val",  "rc2_val",  "rc3_val",  "rc4_val", 
+                           "rc1_tr",   "rc2_tr",   "nwspol",   "stflife", 
+                           "sclmeet",  "hhmmb", "agea", "polintr",  "domicil",  
+                           "edlveit",  "hincfel",  "mcmsinf",  "panfolru",
+                           "gvhanc19", "pbldmna",  "gndr", "respc19", 
+                           "reshhc19", "getavc19")])
+
+```
+
+```{r}
+cv_model <- cv.glmnet(x, y, alpha = 1)
+
+best_lambda <- cv_model$lambda.min
+best_lambda
+
+plot(cv_model)
+```
+
+```{r}
+best_model <- glmnet(x, y, alpha = 1, lambda = best_lambda)
+coef(best_model)
+```
+
+
+
+
+## Lasso regression for scidecpb
+```{r}
+y <- df_slim$scidecpb
+x <- data.matrix(df_slim[, c("rc1_val",  "rc2_val",  "rc3_val",  "rc4_val", 
+                           "rc1_tr",   "rc2_tr",   "nwspol",   "stflife", 
+                           "sclmeet",  "hhmmb", "agea", "polintr",  "domicil",  
+                           "edlveit",  "hincfel",  "mcmsinf",  "panfolru",
+                           "gvhanc19", "pbldmna",  "gndr", "respc19", 
+                           "reshhc19", "getavc19")])
+
+```
+
+```{r}
+cv_model <- cv.glmnet(x, y, alpha = 1)
+
+best_lambda <- cv_model$lambda.min
+best_lambda
+
+plot(cv_model)
+```
+```{r}
+best_model <- glmnet(x, y, alpha = 1, lambda = best_lambda)
+coef(best_model)
+```
+
+```{r}
+best_model <- glmnet(x, y, alpha = 1, lambda = best_lambda)
+coef(best_model)
+```
+
+
+
+
+
+
+
+
+
+
+## Ridge regression for consprcy
+```{r}
+y <- df_slim$consprcy
+x <- data.matrix(df_slim[, c("rc1_val",  "rc2_val",  "rc3_val",  "rc4_val", 
+                           "rc1_tr",   "rc2_tr",   "nwspol",   "stflife", 
+                           "sclmeet",  "hhmmb", "agea", "polintr",  "domicil",  
+                           "edlveit",  "hincfel",  "mcmsinf",  "panfolru",
+                           "gvhanc19", "pbldmna",  "gndr", "respc19", 
+                           "reshhc19", "getavc19")])
+
+```
+
+```{r}
+cv_model <- cv.glmnet(x, y, alpha = 0)
+
+best_lambda <- cv_model$lambda.min
+best_lambda
+
+plot(cv_model)
+```
+
+```{r}
+best_model <- glmnet(x, y, alpha = 0, lambda = best_lambda)
+coef(best_model)
+```
+
+
+
+
+
+## Ridge regression for scidecpb
+```{r}
+y <- df_slim$scidecpb
+x <- data.matrix(df_slim[, c("rc1_val",  "rc2_val",  "rc3_val",  "rc4_val", 
+                           "rc1_tr",   "rc2_tr",   "nwspol",   "stflife", 
+                           "sclmeet",  "hhmmb", "agea", "polintr",  "domicil",  
+                           "edlveit",  "hincfel",  "mcmsinf",  "panfolru",
+                           "gvhanc19", "pbldmna",  "gndr", "respc19", 
+                           "reshhc19", "getavc19")])
+
+```
+
+```{r}
+cv_model <- cv.glmnet(x, y, alpha = 0)
+
+best_lambda <- cv_model$lambda.min
+best_lambda
+
+plot(cv_model)
+```
+
+```{r}
+best_model <- glmnet(x, y, alpha = 0, lambda = best_lambda)
+coef(best_model)
+```
+
+
+
+
+
+
+
+
+
+
